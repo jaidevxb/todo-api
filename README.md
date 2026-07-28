@@ -105,7 +105,10 @@ More queries, with their output and what they demonstrate, are in
 
 ## Database viewer
 
-![tasks.db open in DB Browser for SQLite](db-screenshot.png)
+`tasks.db` opened in a SQLite viewer, showing the `tasks` table after a first run — the
+three seed rows, with `done` displayed as `FALSE`/`TRUE`:
+
+![tasks.db open in a SQLite viewer](db-screenshot.png)
 
 ## Swagger UI
 
