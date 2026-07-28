@@ -50,6 +50,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+def to_task(row):
+    """SQLite has no real boolean, so turn the stored 0/1 back into true/false."""
+    return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
+
+# Still used by POST/PUT/DELETE until those move to SQL in the next stages.
 tasks = [
     {"id": 1, "title": "Buy milk", "done": False},
     {"id": 2, "title": "Walk dog", "done": True},
@@ -66,14 +71,17 @@ def health():
 
 @app.get("/tasks", summary="List all tasks")
 def get_tasks():
-    return tasks
+    with db() as conn:
+        rows = conn.execute("SELECT id, title, done FROM tasks ORDER BY id").fetchall()
+    return [to_task(r) for r in rows]
 
 @app.get("/tasks/{task_id}", summary="Get a single task by id")
 def get_task(task_id: int):
-    for t in tasks:
-        if t["id"] == task_id:
-            return t
-    raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    with db() as conn:
+        row = conn.execute("SELECT id, title, done FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return to_task(row)
 
 @app.post("/tasks", status_code=201, summary="Create a new task")
 def create_task(task: TaskCreate):
