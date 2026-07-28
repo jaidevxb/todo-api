@@ -1,0 +1,41 @@
+# Values in ${...} are substituted by Compose from .env (see .env.example).
+# Start the whole stack with:  docker compose up
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # Exposed so you can reach the database from the host with psql or a GUI viewer.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Named volume: this is what makes the data outlive the container.
+      - pgdata:/var/lib/postgresql/data
+      # Runs once, when the volume is first created.
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      # Same credentials as above, but the host is `db` — the service name is the
+      # hostname on the compose network, so `localhost` from .env would not resolve.
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        # Wait for pg_isready, not just for the container to exist.
+        condition: service_healthy
+
+volumes:
+  pgdata:
