@@ -54,13 +54,6 @@ def to_task(row):
     """SQLite has no real boolean, so turn the stored 0/1 back into true/false."""
     return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
 
-# Still used by POST/PUT/DELETE until those move to SQL in the next stages.
-tasks = [
-    {"id": 1, "title": "Buy milk", "done": False},
-    {"id": 2, "title": "Walk dog", "done": True},
-    {"id": 3, "title": "Write README", "done": False},
-]
-
 @app.get("/")
 def root():
     return {"name": "Task API", "version": "1.0", "endpoints": ["/tasks"]}
@@ -98,21 +91,23 @@ class TaskUpdate(BaseModel):
 
 @app.put("/tasks/{task_id}", summary="Update a task's title or done status")
 def update_task(task_id: int, update: TaskUpdate):
-    for t in tasks:
-        if t["id"] == task_id:
-            if update.title is not None:
-                if not update.title.strip():
-                    raise HTTPException(status_code=400, detail="title cannot be empty")
-                t["title"] = update.title
-            if update.done is not None:
-                t["done"] = update.done
-            return t
-    raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    with db() as conn:
+        row = conn.execute("SELECT id, title, done FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        title, done = row["title"], bool(row["done"])
+        if update.title is not None:
+            if not update.title.strip():
+                raise HTTPException(status_code=400, detail="title cannot be empty")
+            title = update.title
+        if update.done is not None:
+            done = update.done
+        conn.execute("UPDATE tasks SET title = ?, done = ? WHERE id = ?", (title, int(done), task_id))
+    return {"id": task_id, "title": title, "done": done}
 
 @app.delete("/tasks/{task_id}", status_code=204, summary="Delete a task")
 def delete_task(task_id: int):
-    for i, t in enumerate(tasks):
-        if t["id"] == task_id:
-            tasks.pop(i)
-            return
-    raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    with db() as conn:
+        cur = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
