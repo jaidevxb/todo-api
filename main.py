@@ -1,11 +1,54 @@
+import sqlite3
+from contextlib import asynccontextmanager, contextmanager
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
+DB_PATH = Path(__file__).parent / "tasks.db"
+
+EXAMPLE_TASKS = [
+    ("Buy milk", 0),
+    ("Walk dog", 1),
+    ("Write README", 0),
+]
+
+@contextmanager
+def db():
+    """Open a connection, commit on success, always close."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+def init_db():
+    """Create tasks.db and the tasks table if missing, seeding it once."""
+    with db() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tasks (
+                id    INTEGER PRIMARY KEY,
+                title TEXT    NOT NULL,
+                done  BOOLEAN NOT NULL DEFAULT 0
+            )
+            """
+        )
+        if conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0:
+            conn.executemany("INSERT INTO tasks (title, done) VALUES (?, ?)", EXAMPLE_TASKS)
+
 class TaskCreate(BaseModel):
     title: Optional[str] = None
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 tasks = [
     {"id": 1, "title": "Buy milk", "done": False},
