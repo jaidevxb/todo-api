@@ -9,8 +9,9 @@ from pydantic import BaseModel
 load_dotenv()  # read .env when running outside Docker; a no-op if the file is absent
 
 # auth and repository both read env vars at import time, so they must come after load_dotenv()
-from auth import AuthError, router as auth_router  # noqa: E402
+from auth import AuthError, router as auth_router, supabase  # noqa: E402
 from repository import get_repository  # noqa: E402
+from supabase_auth.errors import AuthApiError  # noqa: E402
 
 repo = get_repository()  # must come after load_dotenv() — it reads DATABASE_URL
 
@@ -57,11 +58,17 @@ def public_info():
 
 @app.get("/protected/profile", summary="The caller's own profile")
 def profile(authorization: str = Header(default=None)):
-    # Presence/format check only for now — verifying the token against Supabase is Stage 3.
     if not authorization or not authorization.startswith("Bearer ") or authorization == "Bearer ":
         raise AuthError(401, "Access token required")
     token = authorization.removeprefix("Bearer ")
-    return {"token_preview": token[:10] + "..."}
+    try:
+        response = supabase.auth.get_user(token)
+    except AuthApiError:
+        raise AuthError(401, "Invalid or expired token")
+    if response is None or response.user is None:
+        raise AuthError(401, "Invalid or expired token")
+    user = response.user
+    return {"id": user.id, "email": user.email, "created_at": user.created_at}
 
 
 @app.get("/tasks", summary="List all tasks")
