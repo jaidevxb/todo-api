@@ -2,16 +2,15 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 load_dotenv()  # read .env when running outside Docker; a no-op if the file is absent
 
 # auth and repository both read env vars at import time, so they must come after load_dotenv()
-from auth import AuthError, router as auth_router, supabase  # noqa: E402
+from auth import AuthError, get_current_user, router as auth_router  # noqa: E402
 from repository import get_repository  # noqa: E402
-from supabase_auth.errors import AuthApiError  # noqa: E402
 
 repo = get_repository()  # must come after load_dotenv() — it reads DATABASE_URL
 
@@ -57,18 +56,13 @@ def public_info():
 
 
 @app.get("/protected/profile", summary="The caller's own profile")
-def profile(authorization: str = Header(default=None)):
-    if not authorization or not authorization.startswith("Bearer ") or authorization == "Bearer ":
-        raise AuthError(401, "Access token required")
-    token = authorization.removeprefix("Bearer ")
-    try:
-        response = supabase.auth.get_user(token)
-    except AuthApiError:
-        raise AuthError(401, "Invalid or expired token")
-    if response is None or response.user is None:
-        raise AuthError(401, "Invalid or expired token")
-    user = response.user
+def profile(user=Depends(get_current_user)):
     return {"id": user.id, "email": user.email, "created_at": user.created_at}
+
+
+@app.get("/protected/dashboard", summary="Another route behind the same auth guard")
+def dashboard(user=Depends(get_current_user)):
+    return {"message": f"Welcome back, {user.email}"}
 
 
 @app.get("/tasks", summary="List all tasks")
