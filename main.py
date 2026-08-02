@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -48,6 +48,20 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/public/info", summary="Public, unauthenticated info")
+def public_info():
+    return {"message": "Welcome stranger! This info is public."}
+
+
+@app.get("/protected/profile", summary="The caller's own profile")
+def profile(authorization: str = Header(default=None)):
+    # Presence/format check only for now — verifying the token against Supabase is Stage 3.
+    if not authorization or not authorization.startswith("Bearer ") or authorization == "Bearer ":
+        raise AuthError(401, "Access token required")
+    token = authorization.removeprefix("Bearer ")
+    return {"token_preview": token[:10] + "..."}
 
 
 @app.get("/tasks", summary="List all tasks")
