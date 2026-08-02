@@ -6,12 +6,23 @@ running in Docker alongside the app. `docker compose up` starts the whole stack.
 The same API also runs against a local SQLite file with no Docker at all — the storage
 backend is chosen at startup from `DATABASE_URL`.
 
+Sign up, log in, and log out are backed by [Supabase Auth](https://supabase.com/auth),
+which issues JWTs on login. Routes under `/protected/*` (and `/auth/logout`) require a
+valid `Authorization: Bearer <token>` header — see [Authentication](#authentication).
+
 ## Quick start
 
 ```bash
 git clone https://github.com/jaidevxb/todo-api.git
 cd todo-api
 cp .env.example .env      # Windows: copy .env.example .env
+```
+
+Then fill in `SUPABASE_URL` and `SUPABASE_KEY` in `.env` from your own Supabase project
+(Project Settings -> API in the Supabase dashboard) — the task storage vars already have
+working local defaults, but auth needs a real project.
+
+```bash
 docker compose up
 ```
 
@@ -76,6 +87,9 @@ committed — copy it and edit as needed.
 | `POSTGRES_DB`       | db container    | Database created on first boot           |
 | `POSTGRES_PORT`     | compose         | Host port mapped to Postgres (def. 5432) |
 | `DATABASE_URL`      | app             | Connection string; picks the backend     |
+| `SUPABASE_URL`      | app             | Your Supabase project's URL              |
+| `SUPABASE_KEY`      | app             | Supabase anon key, used by the auth SDK  |
+| `PORT`              | app             | Port uvicorn listens on (informational)  |
 
 `DATABASE_URL` appears in two places on purpose. In `.env` it points at `localhost`, for
 running uvicorn on your machine against the container. Inside Compose the `app` service
@@ -144,18 +158,72 @@ guard holds across restarts.
 
 ## Endpoints
 
-| Method | Path          | Description                | Success | Errors   |
-| ------ | ------------- | -------------------------- | ------- | -------- |
-| GET    | `/`           | API info                   | 200     | —        |
-| GET    | `/health`     | Health check               | 200     | —        |
-| GET    | `/tasks`      | List all tasks             | 200     | —        |
-| GET    | `/tasks/{id}` | Get one task               | 200     | 404      |
-| POST   | `/tasks`      | Create a new task          | 201     | 400      |
-| PUT    | `/tasks/{id}` | Update a task's title/done | 200     | 400, 404 |
-| DELETE | `/tasks/{id}` | Delete a task              | 204     | 404      |
+| Method | Path                 | Description                 | Auth required | Success | Errors   |
+| ------ | -------------------- | ---------------------------- | -------------- | ------- | -------- |
+| GET    | `/`                  | API info                     | No             | 200     | —        |
+| GET    | `/health`            | Health check                  | No             | 200     | —        |
+| POST   | `/auth/signup`       | Create a Supabase user account | No           | 201     | 400      |
+| POST   | `/auth/login`        | Log in, get access/refresh tokens | No        | 200     | 400, 401 |
+| POST   | `/auth/logout`       | Terminate the current session | **Yes**        | 204     | 401      |
+| GET    | `/public/info`       | Public, unauthenticated info  | No             | 200     | —        |
+| GET    | `/protected/profile` | The caller's own profile      | **Yes**        | 200     | 401      |
+| GET    | `/protected/dashboard` | Second route behind the same guard | **Yes**   | 200     | 401      |
+| GET    | `/tasks`             | List all tasks                | No             | 200     | —        |
+| GET    | `/tasks/{id}`        | Get one task                  | No             | 200     | 404      |
+| POST   | `/tasks`             | Create a new task             | No             | 201     | 400      |
+| PUT    | `/tasks/{id}`        | Update a task's title/done    | No             | 200     | 400, 404 |
+| DELETE | `/tasks/{id}`        | Delete a task                 | No             | 204     | 404      |
 
-Unchanged since the in-memory version. The full request set above was run against both
-SQLite and Postgres and the responses matched byte for byte, including error bodies.
+The `/tasks` routes are unchanged since the in-memory version. The full request set was
+run against both SQLite and Postgres and the responses matched byte for byte, including
+error bodies. "Auth required" routes need `Authorization: Bearer <access_token>` — see
+below.
+
+## Authentication
+
+Auth is handled by [Supabase Auth](https://supabase.com/auth) rather than hand-rolled
+password hashing. Three parties are involved:
+
+1. **Client -> Supabase**: `/auth/signup` and `/auth/login` call the Supabase SDK
+   (`sign_up`, `sign_in_with_password`) directly. Supabase owns the password and returns
+   a signed JWT (`access_token`) plus a `refresh_token` on login.
+2. **Client -> this API**: the client attaches that JWT as
+   `Authorization: Bearer <access_token>` on every request to a protected route.
+3. **This API -> Supabase**: [auth.py](auth.py)'s `get_current_user` dependency pulls the
+   token out of the header and calls `supabase.auth.get_user(token)` to verify it against
+   Supabase before the route body runs. A missing/malformed header or a token Supabase
+   rejects both short-circuit with a 401 — the route function itself never executes.
+
+That dependency is applied with `Depends(get_current_user)`, so adding a new protected
+route is one line, and there is exactly one place that decides whether a caller is
+logged in.
+
+```bash
+# 1. Sign up
+curl -i -X POST http://localhost:8000/auth/signup -H "Content-Type: application/json" \
+     -d '{"email":"test@example.com","password":"password123"}'
+# -> 201, Supabase user object
+
+# 2. Log in
+curl -i -X POST http://localhost:8000/auth/login -H "Content-Type: application/json" \
+     -d '{"email":"test@example.com","password":"password123"}'
+# -> 200 {"access_token": "...", "refresh_token": "...", "user": {...}}
+
+# 3. Call a protected route with the token
+curl -i http://localhost:8000/protected/profile \
+     -H "Authorization: Bearer <PASTE_ACCESS_TOKEN_HERE>"
+# -> 200 {"id": "...", "email": "test@example.com", "created_at": "..."}
+
+# 4. Tamper with the token (or omit it) and the same route returns 401
+curl -i http://localhost:8000/protected/profile -H "Authorization: Bearer garbage"
+# -> 401 {"error": "Invalid or expired token"}
+```
+
+**Note on Supabase's default settings:** a fresh Supabase project requires the signup
+email to be confirmed before that account can log in. For local development, turn this
+off under Authentication -> Sign In / Providers -> Email -> "Confirm email" in the
+Supabase dashboard, or the account stays unable to log in until it clicks a confirmation
+link.
 
 ## Example request
 
@@ -203,3 +271,8 @@ which is still the fallback when `DATABASE_URL` is not set:
 ## Swagger UI
 
 ![Swagger UI screenshot](swagger-screenshot.png)
+
+The `/protected/*` routes and `/auth/logout` show a lock icon and are testable in the
+browser after clicking **Authorize** and pasting an `access_token` from `/auth/login`:
+
+![Swagger UI with bearer auth, showing the Authorize lock and a protected route response](auth-swagger-screenshot.png)
