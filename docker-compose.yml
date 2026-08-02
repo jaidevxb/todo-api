@@ -30,6 +30,8 @@ services:
       # Same credentials as above, but the host is `db` — the service name is the
       # hostname on the compose network, so `localhost` from .env would not resolve.
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}
     ports:
       - "8000:8000"
     depends_on:

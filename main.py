@@ -5,9 +5,10 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from repository import get_repository
-
 load_dotenv()  # read .env when running outside Docker; a no-op if the file is absent
+
+import auth  # noqa: E402,F401  creates the Supabase client at import time; must come after load_dotenv()
+from repository import get_repository  # noqa: E402
 
 repo = get_repository()  # must come after load_dotenv() — it reads DATABASE_URL
 
@@ -24,6 +25,7 @@ class TaskUpdate(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     repo.init_schema()
+    print("Server running and connected to Supabase")
     yield
 
 
