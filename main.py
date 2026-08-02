@@ -31,7 +31,12 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="Task API",
+    description="A to-do list API with Supabase-backed auth. Protected routes take a "
+    "Bearer access_token from POST /auth/login — click Authorize below to try them.",
+    lifespan=lifespan,
+)
 app.include_router(auth_router)
 
 
