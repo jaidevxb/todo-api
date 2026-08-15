@@ -1,4 +1,3 @@
-import json
 import os
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -6,7 +5,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 load_dotenv()  # read .env when running outside Docker; a no-op if the file is absent
@@ -14,14 +13,10 @@ load_dotenv()  # read .env when running outside Docker; a no-op if the file is a
 # auth and repository both read env vars at import time, so they must come after load_dotenv()
 from auth import AuthError, get_current_user, router as auth_router  # noqa: E402
 from repository import get_repository  # noqa: E402
-from llm.client import call_model  # noqa: E402
-from llm.prompts import load_prompt  # noqa: E402
+from llm.enrich import run_enrichment  # noqa: E402
 from llm.schema import EnrichRequest, EnrichResult, STUB_RESULT  # noqa: E402
 
 repo = get_repository()  # must come after load_dotenv() — it reads DATABASE_URL
-
-PROMPT_VERSION = "enrich-v1"
-ENRICH_SYSTEM_PROMPT = load_prompt(f"{PROMPT_VERSION}.md")
 
 
 class TaskCreate(BaseModel):
@@ -124,14 +119,8 @@ def delete_task(task_id: int):
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
 
-@app.post("/enrich", summary="Enrich a scraped book record")
+@app.post("/enrich", response_model=EnrichResult, summary="Enrich a scraped book record")
 def enrich(payload: EnrichRequest):
     if os.getenv("LLM_STUB") == "1":
         return STUB_RESULT
-
-    # user content is JSON-encoded and sent as its own message — never glued into the
-    # system prompt — so untrusted book descriptions can't hijack the instructions above
-    user_content = json.dumps({"title": payload.title, "description": payload.description})
-    raw = call_model(ENRICH_SYSTEM_PROMPT, user_content)
-    # Stage 2: return the model's raw text as-is. No parsing, no validation yet — that's Stage 3.
-    return PlainTextResponse(raw)
+    return run_enrichment(payload)
