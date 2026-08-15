@@ -217,6 +217,17 @@ curl -s -X POST http://localhost:8000/enrich \
 Set `LLM_STUB=1` to skip the model entirely and get a fixed schema-valid response —
 useful for developing the endpoint without spending a call.
 
+**What surprised me testing three real inputs (Stage 2):** the model got the category
+and flags right every time, but the *wrapping* wasn't consistent — one response came
+back plain JSON, another arrived wrapped in a ```` ```json ```` fence. Same prompt, same
+temperature, different shape. That's exactly why Stage 3 exists: strip the fence, parse,
+validate against the schema, and never trust the wrapping.
+
+**Provider note:** three environment variables (`LLM_BASE_URL`, `LLM_API_KEY`,
+`LLM_MODEL`) are the only difference between a model running on your laptop and one
+running in a datacentre — this project points the same `openai` client at Gemini's
+OpenAI-compatible endpoint instead of OpenAI itself. Nobody should hard-code a provider.
+
 ## Authentication
 
 Auth is handled by [Supabase Auth](https://supabase.com/auth) rather than hand-rolled
