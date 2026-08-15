@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 from pydantic import BaseModel
 
 load_dotenv()  # read .env when running outside Docker; a no-op if the file is absent
@@ -14,7 +15,14 @@ load_dotenv()  # read .env when running outside Docker; a no-op if the file is a
 from auth import AuthError, get_current_user, router as auth_router  # noqa: E402
 from repository import get_repository  # noqa: E402
 from llm.enrich import run_enrichment  # noqa: E402
-from llm.schema import EnrichRequest, EnrichResult, STUB_RESULT  # noqa: E402
+from llm.schema import Category, EnrichRequest, EnrichResult, STUB_RESULT  # noqa: E402
+
+LLM_DISABLED_FALLBACK = EnrichResult(
+    category=Category.other,
+    summary="AI enrichment is currently disabled.",
+    quality_flags=[],
+    confidence=0.0,
+)
 
 repo = get_repository()  # must come after load_dotenv() — it reads DATABASE_URL
 
@@ -56,6 +64,31 @@ def validation_error_handler(request: Request, exc: RequestValidationError):
     first = exc.errors()[0]
     field = ".".join(str(part) for part in first["loc"] if part != "body") or "body"
     return JSONResponse(status_code=400, content={"error": f"{field}: {first['msg']}"})
+
+
+@app.exception_handler(APITimeoutError)
+def llm_timeout_handler(request: Request, exc: APITimeoutError):
+    return JSONResponse(status_code=504, content={"error": "model call timed out"})
+
+
+@app.exception_handler(APIConnectionError)
+def llm_connection_handler(request: Request, exc: APIConnectionError):
+    return JSONResponse(status_code=504, content={"error": "could not reach the model provider"})
+
+
+@app.exception_handler(RateLimitError)
+def llm_rate_limit_handler(request: Request, exc: RateLimitError):
+    return JSONResponse(status_code=429, content={"error": "model provider rate limit exceeded"})
+
+
+@app.exception_handler(APIStatusError)
+def llm_status_error_handler(request: Request, exc: APIStatusError):
+    # A bad request/key (400/401/403) is never retried — see llm/client.py — so this
+    # fires immediately. Anything else that reached here is an unretried 5xx.
+    return JSONResponse(
+        status_code=502,
+        content={"error": f"model provider rejected the request ({exc.status_code})"},
+    )
 
 
 @app.get("/")
@@ -121,6 +154,9 @@ def delete_task(task_id: int):
 
 @app.post("/enrich", response_model=EnrichResult, summary="Enrich a scraped book record")
 def enrich(payload: EnrichRequest):
+    if os.getenv("LLM_ENABLED", "true").lower() == "false":
+        # kill switch: skip the model entirely, no deploy needed to flip it
+        return LLM_DISABLED_FALLBACK
     if os.getenv("LLM_STUB") == "1":
         return STUB_RESULT
     return run_enrichment(payload)

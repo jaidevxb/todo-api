@@ -215,7 +215,16 @@ curl -s -X POST http://localhost:8000/enrich \
 ```
 
 Set `LLM_STUB=1` to skip the model entirely and get a fixed schema-valid response —
-useful for developing the endpoint without spending a call.
+useful for developing the endpoint without spending a call. Set `LLM_ENABLED=false` to
+flip the kill switch: the model is never called and the endpoint returns a deterministic
+fallback (`category: "other"`, `confidence: 0.0`) instead of a clean 503 — chosen so a
+downstream caller always gets a schema-shaped response, provider outage or not.
+
+**Retries:** the client sets `max_retries=0` and a 30s timeout, and does its own retry
+logic instead of relying on the `openai` SDK's default of two silent retries — so the
+one retry policy actually in effect is the one written down here: retry on timeouts,
+connection errors, `429`, and `5xx`, with exponential backoff (1s/2s/4s) plus jitter,
+honouring `Retry-After` when the provider sends one; never retry on `400`/`401`/`403`.
 
 **What surprised me testing three real inputs (Stage 2):** the model got the category
 and flags right every time, but the *wrapping* wasn't consistent — one response came

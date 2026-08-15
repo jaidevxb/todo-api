@@ -5,6 +5,7 @@ outside the system. Parse it, validate it against the schema, repair once if tha
 fails, and quarantine (never crash, never guess) if it still doesn't fit.
 """
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +14,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from llm.client import call_model
+from llm.costlog import log_call
 from llm.prompts import load_prompt
 from llm.schema import EnrichRequest, EnrichResult
 
@@ -58,12 +60,14 @@ def _quarantine(payload: EnrichRequest, prompt_version: str, raw: str, error: st
 
 
 def run_enrichment(payload: EnrichRequest, prompt_version: str = "enrich-v1") -> EnrichResult:
+    model = os.environ["LLM_MODEL"]
     system_prompt = load_prompt(f"{prompt_version}.md")
     # JSON-encoded and sent as its own message — never glued into the system prompt —
     # so an untrusted book description can't hijack the instructions above it
     user_content = json.dumps({"title": payload.title, "description": payload.description})
 
-    raw = call_model(system_prompt, user_content)
+    raw, usage = call_model(system_prompt, user_content)
+    log_call(prompt_version, model, usage, is_repair_call=False)
     result, error = _parse_and_validate(raw)
     if result is not None:
         return result
@@ -76,7 +80,8 @@ def run_enrichment(payload: EnrichRequest, prompt_version: str = "enrich-v1") ->
         f"Your previous answer was: {raw}\n"
         "Return only corrected JSON matching the schema."
     )
-    raw2 = call_model(system_prompt, repair_content)
+    raw2, usage2 = call_model(system_prompt, repair_content)
+    log_call(prompt_version, model, usage2, is_repair_call=True)
     result2, error2 = _parse_and_validate(raw2)
     if result2 is not None:
         return result2
