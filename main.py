@@ -1,8 +1,10 @@
+import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -11,6 +13,7 @@ load_dotenv()  # read .env when running outside Docker; a no-op if the file is a
 # auth and repository both read env vars at import time, so they must come after load_dotenv()
 from auth import AuthError, get_current_user, router as auth_router  # noqa: E402
 from repository import get_repository  # noqa: E402
+from llm.schema import EnrichRequest, EnrichResult, STUB_RESULT  # noqa: E402
 
 repo = get_repository()  # must come after load_dotenv() — it reads DATABASE_URL
 
@@ -43,6 +46,15 @@ app.include_router(auth_router)
 @app.exception_handler(AuthError)
 def auth_error_handler(request: Request, exc: AuthError):
     return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+
+
+@app.exception_handler(RequestValidationError)
+def validation_error_handler(request: Request, exc: RequestValidationError):
+    # FastAPI's default is 422; we want a plain 400 naming the offending field,
+    # so a malformed request never reaches (and never bills) the model.
+    first = exc.errors()[0]
+    field = ".".join(str(part) for part in first["loc"] if part != "body") or "body"
+    return JSONResponse(status_code=400, content={"error": f"{field}: {first['msg']}"})
 
 
 @app.get("/")
@@ -104,3 +116,10 @@ def update_task(task_id: int, update: TaskUpdate):
 def delete_task(task_id: int):
     if not repo.delete(task_id):
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+
+@app.post("/enrich", response_model=EnrichResult, summary="Enrich a scraped book record")
+def enrich(payload: EnrichRequest):
+    if os.getenv("LLM_STUB") == "1":
+        return STUB_RESULT
+    raise HTTPException(status_code=501, detail="model call not wired up yet (see Stage 2)")

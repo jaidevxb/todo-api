@@ -173,11 +173,49 @@ guard holds across restarts.
 | POST   | `/tasks`             | Create a new task             | No             | 201     | 400      |
 | PUT    | `/tasks/{id}`        | Update a task's title/done    | No             | 200     | 400, 404 |
 | DELETE | `/tasks/{id}`        | Delete a task                 | No             | 204     | 404      |
+| POST   | `/enrich`            | Enrich a scraped book record  | No             | 200     | 400, 422, 503, 504 |
 
 The `/tasks` routes are unchanged since the in-memory version. The full request set was
 run against both SQLite and Postgres and the responses matched byte for byte, including
 error bodies. "Auth required" routes need `Authorization: Bearer <access_token>` — see
 below.
+
+## Enrich endpoint (Week 7 / A17)
+
+`POST /enrich` takes a scraped book record — the `title` / `description` shape produced
+by [../scraper](../scraper) — and returns a category, a one-sentence summary, and
+data-quality flags. Full spec in [JOB-CARD.md](JOB-CARD.md).
+
+Provider: [Gemini](https://ai.google.dev/), via its OpenAI-compatible endpoint. Swapping
+providers is three env vars — `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` — see
+`.env.example`.
+
+Valid request:
+
+```bash
+curl -s -X POST http://localhost:8000/enrich \
+  -H "Content-Type: application/json" \
+  -d '{"title": "A Light in the Attic", "description": "A classic collection of poetry and drawings from Shel Silverstein."}'
+```
+
+```json
+{"category":"poetry","summary":"A classic illustrated poetry collection by Shel Silverstein.","quality_flags":[],"confidence":0.9}
+```
+
+Deliberately broken request (missing `title`) — rejected before any model call:
+
+```bash
+curl -s -X POST http://localhost:8000/enrich \
+  -H "Content-Type: application/json" \
+  -d '{"description": "no title here"}'
+```
+
+```json
+{"error":"title: Field required"}
+```
+
+Set `LLM_STUB=1` to skip the model entirely and get a fixed schema-valid response —
+useful for developing the endpoint without spending a call.
 
 ## Authentication
 
