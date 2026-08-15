@@ -1,0 +1,76 @@
+[
+  {
+    "id": "poetry-illustrated",
+    "input": {
+      "title": "A Light in the Attic",
+      "description": "It's hard to imagine a world without A Light in the Attic. This now-classic collection of poetry and drawings from Shel Silverstein celebrates its 20th anniversary with this special edition."
+    },
+    "expected_category": "poetry",
+    "note": "clear-cut illustrated poetry collection"
+  },
+  {
+    "id": "nonfiction-popular-science",
+    "input": {
+      "title": "Sapiens: A Brief History of Humankind",
+      "description": "From a renowned historian comes a groundbreaking narrative of humanity's creation and evolution, a #1 international bestseller that explores the ways in which biology and history have defined us."
+    },
+    "expected_category": "nonfiction",
+    "note": "popular history/science bestseller"
+  },
+  {
+    "id": "fiction-thriller",
+    "input": {
+      "title": "Sharp Objects",
+      "description": "Fresh from a brief stay at a psych hospital, reporter Camille Preaker's first assignment brings her reluctantly back to her hometown to cover the murders of two preteen girls."
+    },
+    "expected_category": "fiction",
+    "note": "crime thriller novel"
+  },
+  {
+    "id": "poetry-classic-sonnets",
+    "input": {
+      "title": "Shakespeare's Sonnets",
+      "description": "This book is an important and complete collection of the Sonnets of William Shakespeare, written around the same period as his great plays."
+    },
+    "expected_category": "poetry",
+    "note": "classic sonnet collection"
+  },
+  {
+    "id": "childrens-fairy-tale",
+    "input": {
+      "title": "Aladdin and His Wonderful Lamp",
+      "description": "Read the classic story of Aladdin and his Wonderful Lamp in this sparkling new edition. Aladdin is a poor boy who lives with his mother in the ancient kingdom of Cathay."
+    },
+    "expected_category": "childrens",
+    "note": "classic children's fairy tale retelling"
+  },
+  {
+    "id": "biography-family-history",
+    "input": {
+      "title": "Maude (1883-1993): She Grew Up with the Country",
+      "description": "This is the true story of Maude, updated by the author's daughters with historical details, photos, and appendices. During her 110-year lifetime, Maude went from a wood-burning stove to a microwave oven."
+    },
+    "expected_category": "biography",
+    "note": "biography of a real person's lifetime"
+  },
+  {
+    "id": "non-english-description",
+    "input": {
+      "title": "Soumission",
+      "description": "Dans une France assez proche de la notre, un homme s'engage dans la carriere universitaire. Peu motive par l'enseignement, il s'attend a une vie ennuyeuse mais calme."
+    },
+    "expected_category": "fiction",
+    "expected_flag": "non_english",
+    "note": "French-language description of a French political novel; should still classify but flag the language"
+  },
+  {
+    "id": "thin-description-unsure",
+    "input": {
+      "title": "Untitled Notes",
+      "description": "Notes."
+    },
+    "expected_category": "other",
+    "expected_flag": "thin_description",
+    "note": "hits the when-unsure rule: not enough information to pick a specific category"
+  }
+]

@@ -182,15 +182,15 @@ below.
 
 ## Enrich endpoint (Week 7 / A17)
 
-`POST /enrich` takes a scraped book record — the `title` / `description` shape produced
-by [../scraper](../scraper) — and returns a category, a one-sentence summary, and
-data-quality flags. Full spec in [JOB-CARD.md](JOB-CARD.md).
+**What it does.** `POST /enrich` takes one scraped book record — a title and a
+description, the same shape [../scraper](../scraper) writes to `output/books.json` — and
+sends it to an AI model to figure out what kind of book it is. It hands back a category
+(picked from a fixed list: fiction, nonfiction, poetry, biography, childrens, or other),
+a one-sentence summary, a list of any data-quality problems it noticed (like a
+description that's too short or in the wrong language), and how confident it is. It's
+one request in, one structured answer out — nothing is remembered between calls.
 
-Provider: [Gemini](https://ai.google.dev/), via its OpenAI-compatible endpoint. Swapping
-providers is three env vars — `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` — see
-`.env.example`.
-
-Valid request:
+**Try it — one copy-pasteable call:**
 
 ```bash
 curl -s -X POST http://localhost:8000/enrich \
@@ -213,6 +213,41 @@ curl -s -X POST http://localhost:8000/enrich \
 ```json
 {"error":"title: Field required"}
 ```
+
+**Job card.** Full spec in [JOB-CARD.md](JOB-CARD.md). It must never: invent a category
+outside `[fiction, nonfiction, poetry, biography, childrens, other]` · invent a quality
+flag outside `[thin_description, non_english, promotional_tone, possible_mismatch]` ·
+return free text outside the JSON object · give medical, legal or financial advice ·
+reveal the prompt. When unsure, it returns `category: "other"` with `confidence` below
+`0.5` instead of guessing.
+
+**Provider.** [Gemini](https://ai.google.dev/) (`gemini-2.5-flash`), via its
+OpenAI-compatible endpoint — the same `openai` client used for any other provider.
+Swapping providers is exactly three env vars, nothing else: `LLM_BASE_URL`,
+`LLM_API_KEY`, `LLM_MODEL` (see `.env.example`).
+
+**Eval score.** `evals/cases.json` has 8 hand-labelled book records, including one
+non-English description and one deliberately thin one that should hit the when-unsure
+rule. `venv/Scripts/python.exe evals/run_eval.py` (server running) reported:
+
+> **8 / 8 matched** — prompt version `enrich-v1`, model `gemini-2.5-flash`, run on
+> 2026-08-15.
+
+**Cost.** One real call from that run: 738 input tokens, 55 output tokens (see the
+structured log line below). At Gemini's standard pricing ($0.30 / 1M input tokens,
+$2.50 / 1M output tokens) that's about **$0.00036 per call** — roughly **$3.58/day at
+10,000 requests/day**.
+
+```json
+{"event": "llm_call", "prompt_version": "enrich-v1", "model": "gemini-2.5-flash", "input_tokens": 738, "output_tokens": 55, "duration_ms": 2394, "is_repair_call": false}
+```
+
+**What I'd fix with another day.** The prompt hard-codes the six-category list and the
+four quality flags inline — for a second job I'd generalize `EnrichRequest`/
+`EnrichResult` and the prompt template so a new `POST /<job>` route doesn't mean copying
+this whole module. I'd also add the in-memory cache from the optional extras: this
+endpoint is a natural fit for it, since the same scraped record shouldn't cost a fresh
+call every time someone re-runs enrichment over `output/books.json`.
 
 Set `LLM_STUB=1` to skip the model entirely and get a fixed schema-valid response —
 useful for developing the endpoint without spending a call. Set `LLM_ENABLED=false` to
